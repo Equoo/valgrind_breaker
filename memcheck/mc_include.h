@@ -627,6 +627,12 @@ extern Bool MC_(clo_partial_loads_ok);
 /* Max volume of the freed blocks queue. */
 extern Long MC_(clo_freelist_vol);
 
+/* Malloc fail at */
+extern Long MC_(clo_malloc_fail_at);
+/* Fail all mallocs after the first failed.
+ * default: NO */
+ extern Bool MC_(clo_malloc_fail_all);
+
 /* Blocks with a size >= MC_(clo_freelist_big_blocks) will be put
    in the "big block" freed blocks queue. */
 extern Long MC_(clo_freelist_big_blocks);
@@ -838,6 +844,8 @@ IRSB* MC_(final_tidy) ( IRSB* );
 
 /* Check some assertions to do with the instrumentation machinery. */
 void MC_(do_instrumentation_startup_checks)( void );
+
+UInt MC_(breaking_malloc) ( void );
 
 #endif /* ndef __MC_INCLUDE_H */
 
