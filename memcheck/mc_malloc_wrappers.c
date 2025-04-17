@@ -366,6 +366,9 @@ void* MC_(new_block) ( ThreadId tid,
 {
    MC_Chunk* mc;
 
+   if (MC_(breaking_malloc)())
+      return NULL;
+
    // Allocate and zero if necessary
    if (p) {
       tl_assert(MC_AllocCustom == kind);

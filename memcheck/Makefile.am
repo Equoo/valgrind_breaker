@@ -23,6 +23,7 @@ endif
 
 MEMCHECK_SOURCES_COMMON = \
 	mc_leakcheck.c \
+	mc_breaker.c \
 	mc_malloc_wrappers.c \
 	mc_main.c mc_main_asm.c \
 	mc_translate.c \

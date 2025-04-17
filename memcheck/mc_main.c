@@ -6054,6 +6054,8 @@ static Bool mc_expensive_sanity_check ( void )
 Bool          MC_(clo_partial_loads_ok)       = True;
 Long          MC_(clo_freelist_vol)           = 20LL*1000LL*1000LL;
 Long          MC_(clo_freelist_big_blocks)    =  1LL*1000LL*1000LL;
+Long          MC_(clo_malloc_fail_at)         =  1LL*1000LL*1000LL;
+Bool          MC_(clo_malloc_fail_all)        = False;
 LeakCheckMode MC_(clo_leak_check)             = LC_Summary;
 VgRes         MC_(clo_leak_resolution)        = Vg_HighRes;
 UInt          MC_(clo_show_leak_kinds)        = R2S(Possible) | R2S(Unreached);
@@ -6277,7 +6279,11 @@ static Bool mc_process_cmd_line_options(const HChar* arg)
                        MC_(clo_xtree_leak)) {}
    else if VG_STR_CLO (arg, "--xtree-leak-file",
                        MC_(clo_xtree_leak_file)) {}
-
+   
+   else if VG_BINT_CLOM(cloPD, arg, "--malloc-fail-at",  MC_(clo_malloc_fail_at),
+                       0, 10*1000*1000*1000LL) {}
+   else if VG_BOOL_CLO(arg, "--malloc-fail-all",
+                        MC_(clo_malloc_fail_all)) {}
    else
       return VG_(replacement_malloc_process_cmd_line_option)(arg);
 
@@ -6330,6 +6336,9 @@ static void mc_print_usage(void)
 "        stack trace(s) to keep for malloc'd/free'd areas       [alloc-and-free]\n"
 "    --show-mismatched-frees=no|yes   show frees that don't match the allocator? [yes]\n"
 "    --show-realloc-size-zero=no|yes  show reallocs with a size of zero? [yes]\n"
+"\n    \033[1;31mNEW DLC CONTENT\033[0m: MALLOC BREAKER\n"
+"        --malloc-fail-at=<n>         Fail the Nth malloc call [n=0 -> none]\n"
+"        --malloc-fail-all=no|yes     Fail all malloc calls after the Nth malloc call [no]\n"
    );
 }
 
