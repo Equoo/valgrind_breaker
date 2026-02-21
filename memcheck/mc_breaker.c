@@ -1,3 +1,4 @@
+#include "libvex_basictypes.h"
 #include "pub_tool_basics.h"
 #include "pub_tool_aspacemgr.h"
 #include "pub_tool_gdbserver.h"
@@ -50,41 +51,29 @@ extern int * __error(void) __attribute__((weak));
       (*__error ()) = VKI_ENOMEM;
 #define SET_ERRNO_EINVAL if (__error)        \
       (*__error ()) = VKI_EINVAL;
-
 #else
 #define SET_ERRNO_ENOMEM {}
 #define SET_ERRNO_EINVAL {}
 #endif
 
-#define KRST  "\033[0m"
-#define KNRM  "\x1B[0m"
-#define KRED  "\x1B[31m"
-#define KGRN  "\x1B[32m"
-#define KYEL  "\x1B[33m"
-#define KBLU  "\x1B[34m"
-#define KMAG  "\x1B[35m"
-#define KCYN  "\x1B[36m"
-#define KWHT  "\x1B[37m"
+#define Err_Break 12
 
 UInt MC_(breaking_malloc) (void)
 {
-	static Int malloc_call_count = 0;
+	Int			was_suppressed = 1;
 
-	malloc_call_count++;
+	MC_(clo_malloc_fail_call_count)++;
 
 	if (MC_(clo_malloc_fail_at) > 0 &&
-		((MC_(clo_malloc_fail_all) && malloc_call_count >= MC_(clo_malloc_fail_at))
-		|| (!MC_(clo_malloc_fail_all) && malloc_call_count == MC_(clo_malloc_fail_at)))
+		((MC_(clo_malloc_fail_all) && MC_(clo_malloc_fail_call_count) >= MC_(clo_malloc_fail_at))
+		|| (!MC_(clo_malloc_fail_all) && MC_(clo_malloc_fail_call_count) == MC_(clo_malloc_fail_at)))
 	) {
-		VG_(umsg)("%sFailing malloc call%s #%d\n", KBLU, KNRM, malloc_call_count);
+		VG_(maybe_record_error)( VG_(get_running_tid)(),
+				Err_Break, 0, /*s*/NULL, &was_suppressed);
+		if (was_suppressed)
+			return (0);
+
 		SET_ERRNO_ENOMEM;
-
-		VG_(printf)(KMAG);
-
-		ExeContext* ec = VG_(record_ExeContext)(VG_(get_running_tid)(), 0);
-		VG_(pp_ExeContext)(ec);
-		
-		VG_(printf)(KNRM);
 
 		return 1;
 	}

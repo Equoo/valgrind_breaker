@@ -629,9 +629,11 @@ extern Long MC_(clo_freelist_vol);
 
 /* Malloc fail at */
 extern Long MC_(clo_malloc_fail_at);
+extern Long MC_(clo_malloc_fail_call_count);
 /* Fail all mallocs after the first failed.
  * default: NO */
- extern Bool MC_(clo_malloc_fail_all);
+extern Bool MC_(clo_malloc_fail_all);
+extern Bool MC_(clo_malloc_fail_count);
 
 /* Blocks with a size >= MC_(clo_freelist_big_blocks) will be put
    in the "big block" freed blocks queue. */

@@ -73,6 +73,7 @@ typedef
       Err_FreeMismatch,
       Err_Overlap,
       Err_Leak,
+      Err_Break,
       Err_IllegalMempool,
       Err_FishyValue,
       Err_ReallocSizeZero,
@@ -735,6 +736,28 @@ void MC_(pp_Error) ( const Error* err )
          break;
       }
 
+#define KRST  "\033[0m"
+#define KNRM  "\x1B[0m"
+#define KRED  "\x1B[31m"
+#define KGRN  "\x1B[32m"
+#define KYEL  "\x1B[33m"
+#define KBLU  "\x1B[34m"
+#define KMAG  "\x1B[35m"
+#define KCYN  "\x1B[36m"
+#define KWHT  "\x1B[37m"
+
+	  case Err_Break: {
+		*((int *)extra) = 0;
+
+		if (!xml) {
+        	emit("%sFailing malloc call%s #%d\n", KBLU, KNRM, 0);
+			emit(KMAG);
+            VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+			emit(KNRM);
+		}
+		break;
+	  }
+
       case Err_FishyValue:
          if (xml) {
             emit( "  <kind>FishyValue</kind>\n" );
@@ -1276,6 +1299,9 @@ Bool MC_(eq_Error) ( VgRes res, const Error* e1, const Error* e2 )
       case Err_Leak:
          VG_(tool_panic)("Shouldn't get Err_Leak in mc_eq_Error,\n"
                          "since it's handled with VG_(unique_error)()!");
+      
+	  case Err_Break:
+		 return True;
 
       default: 
          VG_(printf)("Error:\n  unknown error code %d\n",
@@ -1417,6 +1443,7 @@ UInt MC_(update_Error_extra)( const Error* err )
    // shown with VG_(unique_error)() so they 'extra' not copied.  But
    // we make it consistent with the others.
    case Err_Leak:
+   case Err_Break:
    case Err_BadAlign:
    case Err_BadSize:
    case Err_SizeMismatch:
@@ -1575,6 +1602,7 @@ typedef
       FreeSupp,             // Invalid or mismatching free
       OverlapSupp,          // Overlapping blocks in memcpy(), strcpy(), etc
       LeakSupp,             // Something to be suppressed in a leak check.
+	  BreakSupp,			// Malloc breaking supression.
       MempoolSupp,          // Memory pool suppression.
       FishyValueSupp,       // Fishy value suppression.
       ReallocSizeZeroSupp,  // realloc size 0 suppression
@@ -1600,6 +1628,7 @@ Bool MC_(is_recognised_suppression) ( const HChar* name, Supp* su )
    else if (VG_STREQ(name, "Addr32"))  skind = Addr32Supp;
    else if (VG_STREQ(name, "Jump"))    skind = JumpSupp;
    else if (VG_STREQ(name, "Free"))    skind = FreeSupp;
+   else if (VG_STREQ(name, "Break"))   skind = BreakSupp;
    else if (VG_STREQ(name, "Leak"))    skind = LeakSupp;
    else if (VG_STREQ(name, "Overlap")) skind = OverlapSupp;
    else if (VG_STREQ(name, "Mempool")) skind = MempoolSupp;
@@ -1780,6 +1809,9 @@ Bool MC_(error_matches_suppression) ( const Error* err, const Supp* su )
             return RiS(extra->Err.Leak.lr->key.state, lse->match_leak_kinds);
          } else
             return False;
+	
+	  case BreakSupp:
+		 return (ekind == Err_Break);
 
       case MempoolSupp:
          return (ekind == Err_IllegalMempool);
@@ -1831,6 +1863,7 @@ const HChar* MC_(get_error_name) ( const Error* err )
    case Err_CoreMem:         return "CoreMem";
    case Err_Overlap:         return "Overlap";
    case Err_Leak:            return "Leak";
+   case Err_Break:           return "Break";
    case Err_Cond:            return "Cond";
    case Err_FishyValue:      return "FishyValue";
    case Err_ReallocSizeZero: return "ReallocZero";

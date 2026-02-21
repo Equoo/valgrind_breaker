@@ -1242,15 +1242,29 @@ void MC_(print_malloc_stats) ( void )
       nbytes += (ULong)mc->szB;
    }
 
-   VG_(umsg)(
-      "HEAP SUMMARY:\n"
-      "    in use at exit: %'llu bytes in %'lu blocks\n"
-      "  total heap usage: %'lu allocs, %'lu frees, %'llu bytes allocated\n"
-      "\n",
-      nbytes, nblocks,
-      cmalloc_n_mallocs,
-      cmalloc_n_frees, cmalloc_bs_mallocd
-   );
+   if (MC_(clo_malloc_fail_count)) {
+		VG_(umsg)(
+		  "HEAP SUMMARY:\n"
+		  "    in use at exit: %'llu bytes in %'lu blocks\n"
+		  "  total heap usage: %'lu allocs, %'lu frees, %'llu bytes allocated\n"
+		  "  total breakable allocs: %'lld breakables, %'lld supressed\n"
+		  "\n",
+		  nbytes, nblocks,
+		  cmalloc_n_mallocs,
+		  cmalloc_n_frees, cmalloc_bs_mallocd,
+		  MC_(clo_malloc_fail_call_count), 0ll
+	   );
+   } else {
+	   VG_(umsg)(
+		  "HEAP SUMMARY:\n"
+		  "    in use at exit: %'llu bytes in %'lu blocks\n"
+		  "  total heap usage: %'lu allocs, %'lu frees, %'llu bytes allocated\n"
+		  "\n",
+		  nbytes, nblocks,
+		  cmalloc_n_mallocs,
+		  cmalloc_n_frees, cmalloc_bs_mallocd
+	   );
+   }
 }
 
 SizeT MC_(get_cmalloc_n_frees) ( void )
