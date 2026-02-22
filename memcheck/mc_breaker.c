@@ -58,23 +58,28 @@ extern int * __error(void) __attribute__((weak));
 
 #define Err_Break 12
 
-UInt MC_(breaking_malloc) (void)
+UInt MC_(breaking_malloc) (ThreadId tid, Addr a)
 {
-	Int			was_suppressed = 1;
+	Bool		breaking = 0;
+
+	if (MC_(clo_malloc_fail_at) > 0
+		&& ((MC_(clo_malloc_fail_all)
+		  && MC_(clo_malloc_fail_call_count) >= MC_(clo_malloc_fail_at))
+		|| (!MC_(clo_malloc_fail_all)
+			&& MC_(clo_malloc_fail_call_count) == MC_(clo_malloc_fail_at)))
+	) {
+		breaking = 1;
+	}
+
+	ExeContext* ec = VG_(record_ExeContext)(tid, 0);
+	if (VG_(unique_error)( tid,
+		Err_Break, a, /*s*/NULL, NULL, ec, breaking, False, False))
+		return (0);
 
 	MC_(clo_malloc_fail_call_count)++;
 
-	if (MC_(clo_malloc_fail_at) > 0 &&
-		((MC_(clo_malloc_fail_all) && MC_(clo_malloc_fail_call_count) >= MC_(clo_malloc_fail_at))
-		|| (!MC_(clo_malloc_fail_all) && MC_(clo_malloc_fail_call_count) == MC_(clo_malloc_fail_at)))
-	) {
-		VG_(maybe_record_error)( VG_(get_running_tid)(),
-				Err_Break, 0, /*s*/NULL, &was_suppressed);
-		if (was_suppressed)
-			return (0);
-
+	if (breaking) {
 		SET_ERRNO_ENOMEM;
-
 		return 1;
 	}
 	return 0;

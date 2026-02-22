@@ -366,7 +366,7 @@ void* MC_(new_block) ( ThreadId tid,
 {
    MC_Chunk* mc;
 
-   if (MC_(breaking_malloc)())
+   if (MC_(breaking_malloc)(tid, p))
       return NULL;
 
    // Allocate and zero if necessary

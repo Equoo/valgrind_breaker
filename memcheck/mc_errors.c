@@ -84,7 +84,6 @@ typedef
    }
    MC_ErrorTag;
 
-
 typedef struct _MC_Error MC_Error;
 
 struct _MC_Error {
@@ -232,7 +231,6 @@ struct _MC_Error {
       } AlignMismatch;
    } Err;
 };
-
 
 /*------------------------------------------------------------*/
 /*--- Printing errors                                      ---*/
@@ -747,8 +745,6 @@ void MC_(pp_Error) ( const Error* err )
 #define KWHT  "\x1B[37m"
 
 	  case Err_Break: {
-		*((int *)extra) = 0;
-
 		if (!xml) {
         	emit("%sFailing malloc call%s #%d\n", KBLU, KNRM, 0);
 			emit(KMAG);
