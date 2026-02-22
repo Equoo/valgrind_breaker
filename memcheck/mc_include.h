@@ -847,7 +847,7 @@ IRSB* MC_(final_tidy) ( IRSB* );
 /* Check some assertions to do with the instrumentation machinery. */
 void MC_(do_instrumentation_startup_checks)( void );
 
-UInt MC_(breaking_malloc) ( void );
+UInt MC_(breaking_malloc) ( ThreadId tid, Addr a );
 
 #endif /* ndef __MC_INCLUDE_H */
 

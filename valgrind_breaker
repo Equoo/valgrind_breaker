@@ -1,0 +1,103 @@
+#!/bin/bash
+
+VALGRIND_PATH=/somewhere
+
+VALGRIND() {
+	/home/dderny/Documents/valgrind_breaker/vg-in-place "$@"
+	# VALGRIND_LIB=$VALGRIND_PATH/libexec/valgrind VALGRIND_LIB_INNER=$VALGRIND_LIB $VALGRIND_PATH/bin/valgrind "$@"
+}
+
+export MAGENTA='\033[1;35m'
+export RESET='\033[0m'
+
+if [[ " $@ " == *" --malloc-fail-auto "* ]]; then
+	min=$(echo "${@}" | grep -oP '(?<=--malloc-fail-start=)\d+')
+	max=$(echo "${@}" | grep -oP '(?<=--malloc-fail-max=)\d+')
+
+	args=("${@/--malloc-fail-auto/}")
+	args=("${args[@]/$(echo "${args[@]}" | grep -oP '\-\-malloc-fail-start=\d+')/}")
+	args=("${args[@]/$(echo "${args[@]}" | grep -oP '\-\-malloc-fail-max=\d+')/}")
+
+	if [[ -z "$min" ]]; then
+		min=1
+	fi
+	if [[ -z "$max" ]]; then
+		max=0
+	fi
+
+	export STDIN_FILE=$(mktemp)
+	if [ ! -t 0 ]; then
+		cat >"$STDIN_FILE"
+	else
+		rm $STDIN_FILE
+		unset STDIN_FILE
+	fi
+
+	tmpvalgrind=$(mktemp)
+
+	# Run Valgrind once to count mallocs
+	output=$(eval VALGRIND --tool=memcheck --xml=yes --xml-file=$tmpvalgrind --malloc-fail-count=yes "${args[@]}" $(if [[ -v STDIN_FILE ]]; then echo "< $STDIN_FILE"; fi) 2>&1 | tr -d '\0')
+	echo $(if [[ -v STDIN_FILE ]]; then echo "< $STDIN_FILE"; fi)
+	malloc_count=$(cat $tmpvalgrind | sed -n '/<malloc_breakable_count>/,/<\/malloc_breakable_count>/ {H;}; /<\/malloc_breakable_count>/ {g; s/.*<malloc_breakable_count>\(.*\)<\/malloc_breakable_count>.*/\1/p}' | sed -e 's/,//')
+	if [[ -z "$malloc_count" ]]; then
+		if echo "$output" | grep -q "valgrind:"; then
+			echo -e "$output"
+		else
+			echo "Failed to detect the number of malloc calls."
+		fi
+		rm $tmpvalgrind
+		exit 1
+	fi
+
+	rm $tmpvalgrind
+
+	echo "Number of mallocs detected: $malloc_count"
+
+	export COMMAND="${args[@]}"
+	export VALGRIND_PATH
+	export args
+
+	run_malloc_fail_test() {
+		local i=$1
+		echo "Running Valgrind with --malloc-fail-at=$i"
+
+		tmpvalgrind=$(mktemp)
+		tmpleaks=$(mktemp)
+		rm $tmpleaks
+		rm $tmpvalgrind
+		valgrind_output=$(eval VALGRIND --tool=memcheck --leak-check=full --track-origins=yes --show-leak-kinds=all --xml=yes --xml-file=$tmpvalgrind --xtree-leak=yes --xtree-leak-file=$tmpleaks --malloc-fail-at="$i" "$COMMAND" $(if [[ -v STDIN_FILE ]]; then echo "< $STDIN_FILE"; fi) 2>/dev/null 1> /dev/null)
+
+		error_code=$?
+
+		errorcounts=$(cat $tmpvalgrind | sed -n '/<errorcounts>/,/<\/errorcounts>/ {H;}; /<\/errorcounts>/ {g; s/.*<errorcounts>\(.*\)<\/errorcounts>.*/\1/p}')
+
+		if [[ $error_code -eq 139 ]]; then
+			echo -e "${MAGENTA}SIGSEGV detected in Valgrind run with --malloc-fail-at=$i${RESET}"
+			rm $tmpvalgrind
+			rm $tmpleaks
+			return
+		fi
+
+		if [ -e "$tmpleaks" ]; then
+			echo -e "${MAGENTA}Memory leak detected in Valgrind run with --malloc-fail-at=$i${RESET}"
+			rm $tmpleaks
+		fi
+
+		if [[ $errorcounts != "" ]]; then
+			echo -e "${MAGENTA}Errors detected in Valgrind run with --malloc-fail-at=$i${RESET}"
+		fi
+		rm $tmpvalgrind
+	}
+
+	export -f VALGRIND
+	export -f run_malloc_fail_test
+
+	max=$(( max > malloc_count ? max : malloc_count ))
+
+	seq $min $max | xargs -P "$(nproc)" -I{} bash -c 'run_malloc_fail_test "$@"' _ {}
+
+	rm -Rf $STDIN_FILE
+else
+	VALGRIND "$@"
+	exit 1
+fi
