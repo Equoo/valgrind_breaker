@@ -1237,7 +1237,7 @@ void MC_(print_malloc_stats) ( void )
 	   if (MC_(clo_malloc_fail_count)) {
 			VG_(printf_xml)(
 			  "<malloc_breakable_count>%'lld</malloc_breakable_count>\n"
-			  "<malloc_supressed_count>%'lld</malloc_supressed_count>\n",
+			  "<malloc_supressed_count>%'lld</malloc_supressed_count>\n\n",
 			  MC_(clo_malloc_fail_call_count), 0ll
 		   );
 	   }

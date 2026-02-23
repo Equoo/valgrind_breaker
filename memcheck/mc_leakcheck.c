@@ -1708,7 +1708,7 @@ static void print_results(ThreadId tid, LeakCheckParams* lcp)
          MC_(bytes_reachable)   += lr->szB;
 
       } else {
-         VG_(tool_panic)("unknown loss mode");
+         // VG_(tool_panic)("unknown loss mode");
       }
    }
 
@@ -1722,7 +1722,9 @@ static void print_results(ThreadId tid, LeakCheckParams* lcp)
       VG_(XT_delete)(leak_xt);
    }
 
-   if (VG_(clo_verbosity) > 0 && !VG_(clo_xml)) {
+   if (VG_(clo_verbosity) <= 0)
+	   return;
+   if (!VG_(clo_xml)) {
       HChar d_bytes[31];
       HChar d_blocks[31];
 #     define DBY(new,old) \
@@ -1798,6 +1800,123 @@ static void print_results(ThreadId tid, LeakCheckParams* lcp)
                       "--show-leak-kinds=all\n");
       }
       VG_(umsg)("\n");
+      #undef DBL
+      #undef DBY
+   } else {
+		HChar d_bytes[31];
+		HChar d_blocks[31];
+
+# define DBY(new,old) \
+		   MC_(snprintf_delta)(d_bytes, sizeof(d_bytes), (new), (old), \
+							   lcp->deltamode)
+
+# define DBL(new,old) \
+		   MC_(snprintf_delta)(d_blocks, sizeof(d_blocks), (new), (old), \
+							   lcp->deltamode)
+
+		VG_(printf_xml)("  <leak_summary>\n");
+
+		/* DEFINITELY LOST */
+		VG_(printf_xml)("    <leak>\n");
+		VG_(printf_xml)("      <kind>definitely_lost</kind>\n");
+		VG_(printf_xml)("      <xwhat>\n");
+		VG_(printf_xml)("        <leakedbytes>%lu</leakedbytes>\n",
+						MC_(bytes_leaked));
+		VG_(printf_xml)("        <leakedblocks>%lu</leakedblocks>\n",
+						MC_(blocks_leaked));
+		VG_(printf_xml)("        <bytes_delta>%s</bytes_delta>\n",
+						DBY(MC_(bytes_leaked), old_bytes_leaked));
+		VG_(printf_xml)("        <blocks_delta>%s</blocks_delta>\n",
+						DBL(MC_(blocks_leaked), old_blocks_leaked));
+		VG_(printf_xml)("      </xwhat>\n");
+		VG_(printf_xml)("    </leak>\n");
+
+		/* INDIRECTLY LOST */
+		VG_(printf_xml)("    <leak>\n");
+		VG_(printf_xml)("      <kind>indirectly_lost</kind>\n");
+		VG_(printf_xml)("      <xwhat>\n");
+		VG_(printf_xml)("        <leakedbytes>%lu</leakedbytes>\n",
+						MC_(bytes_indirect));
+		VG_(printf_xml)("        <leakedblocks>%lu</leakedblocks>\n",
+						MC_(blocks_indirect));
+		VG_(printf_xml)("        <bytes_delta>%s</bytes_delta>\n",
+						DBY(MC_(bytes_indirect), old_bytes_indirect));
+		VG_(printf_xml)("        <blocks_delta>%s</blocks_delta>\n",
+						DBL(MC_(blocks_indirect), old_blocks_indirect));
+		VG_(printf_xml)("      </xwhat>\n");
+		VG_(printf_xml)("    </leak>\n");
+
+		/* POSSIBLY LOST */
+		VG_(printf_xml)("    <leak>\n");
+		VG_(printf_xml)("      <kind>possibly_lost</kind>\n");
+		VG_(printf_xml)("      <xwhat>\n");
+		VG_(printf_xml)("        <leakedbytes>%lu</leakedbytes>\n",
+						MC_(bytes_dubious));
+		VG_(printf_xml)("        <leakedblocks>%lu</leakedblocks>\n",
+						MC_(blocks_dubious));
+		VG_(printf_xml)("        <bytes_delta>%s</bytes_delta>\n",
+						DBY(MC_(bytes_dubious), old_bytes_dubious));
+		VG_(printf_xml)("        <blocks_delta>%s</blocks_delta>\n",
+						DBL(MC_(blocks_dubious), old_blocks_dubious));
+		VG_(printf_xml)("      </xwhat>\n");
+		VG_(printf_xml)("    </leak>\n");
+
+		/* STILL REACHABLE */
+		VG_(printf_xml)("    <leak>\n");
+		VG_(printf_xml)("      <kind>still_reachable</kind>\n");
+		VG_(printf_xml)("      <xwhat>\n");
+		VG_(printf_xml)("        <leakedbytes>%lu</leakedbytes>\n",
+						MC_(bytes_reachable));
+		VG_(printf_xml)("        <leakedblocks>%lu</leakedblocks>\n",
+						MC_(blocks_reachable));
+		VG_(printf_xml)("        <bytes_delta>%s</bytes_delta>\n",
+						DBY(MC_(bytes_reachable), old_bytes_reachable));
+		VG_(printf_xml)("        <blocks_delta>%s</blocks_delta>\n",
+						DBL(MC_(blocks_reachable), old_blocks_reachable));
+		VG_(printf_xml)("      </xwhat>\n");
+		VG_(printf_xml)("    </leak>\n");
+
+		/* HEURISTICALLY REACHABLE */
+		for (i = 0; i < N_LEAK_CHECK_HEURISTICS; i++) {
+		   if (old_blocks_heuristically_reachable[i] > 0 ||
+			   MC_(blocks_heuristically_reachable)[i] > 0) {
+
+			  VG_(printf_xml)("    <leak>\n");
+			  VG_(printf_xml)("      <kind>heuristically_reachable</kind>\n");
+			  VG_(printf_xml)("      <heuristic>%s</heuristic>\n",
+							  pp_heuristic(i));
+			  VG_(printf_xml)("      <xwhat>\n");
+			  VG_(printf_xml)("        <leakedbytes>%lu</leakedbytes>\n",
+							  MC_(bytes_heuristically_reachable)[i]);
+			  VG_(printf_xml)("        <leakedblocks>%lu</leakedblocks>\n",
+							  MC_(blocks_heuristically_reachable)[i]);
+			  VG_(printf_xml)("        <bytes_delta>%s</bytes_delta>\n",
+							  DBY(MC_(bytes_heuristically_reachable)[i],
+								  old_bytes_heuristically_reachable[i]));
+			  VG_(printf_xml)("        <blocks_delta>%s</blocks_delta>\n",
+							  DBL(MC_(blocks_heuristically_reachable)[i],
+								  old_blocks_heuristically_reachable[i]));
+			  VG_(printf_xml)("      </xwhat>\n");
+			  VG_(printf_xml)("    </leak>\n");
+		   }
+		}
+
+		/* SUPPRESSED */
+		VG_(printf_xml)("    <leak>\n");
+		VG_(printf_xml)("      <kind>suppressed</kind>\n");
+		VG_(printf_xml)("      <xwhat>\n");
+		VG_(printf_xml)("        <leakedbytes>%lu</leakedbytes>\n",
+						MC_(bytes_suppressed));
+		VG_(printf_xml)("        <leakedblocks>%lu</leakedblocks>\n",
+						MC_(blocks_suppressed));
+		VG_(printf_xml)("        <bytes_delta>%s</bytes_delta>\n",
+						DBY(MC_(bytes_suppressed), old_bytes_suppressed));
+		VG_(printf_xml)("        <blocks_delta>%s</blocks_delta>\n",
+						DBL(MC_(blocks_suppressed), old_blocks_suppressed));
+		VG_(printf_xml)("      </xwhat>\n");
+		VG_(printf_xml)("    </leak>\n");
+
+		VG_(printf_xml)("  </leak_summary>\n\n");
       #undef DBL
       #undef DBY
    }
