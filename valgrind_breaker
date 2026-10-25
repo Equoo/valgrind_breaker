@@ -26,6 +26,8 @@ VALGRIND=${VALGRIND:-valgrind}
 MAGENTA=$'\033[1;35m'
 GREEN=$'\033[1;32m'
 RESET=$'\033[0m'
+CLEAR=''
+[[ -t 1 ]] && CLEAR=$'\r\033[K'
 
 usage() {
     sed -n '3,19s/^# \{0,1\}//p' "$0"
@@ -90,15 +92,45 @@ if [[ -n "$PROG_PATH" ]] && ldd "$PROG_PATH" 2>/dev/null | grep -q 'libstdc++'; 
     PRELOAD="$HERE/libmalloc_breaker_cxx.so:$PRELOAD"
 fi
 
-# somalloc=nouserintercepts: keep memcheck from replacing our own malloc.
+# Without it, memcheck also replaces the shim's malloc.
 run_valgrind() {
     LD_PRELOAD="$PRELOAD${LD_PRELOAD:+:$LD_PRELOAD}" "$VALGRIND" \
         --soname-synonyms=somalloc=nouserintercepts "$@"
 }
 
+strip_shim_frames() {
+    awk '
+        function pid() { match($0, /^==[0-9]+==/); return substr($0, RSTART, RLENGTH) }
+        / (at|by) 0x[0-9A-Fa-f]+: / &&
+        /\((malloc_breaker(_cxx)?\.cc?|valgrind\.h):[0-9]+\)|\(in [^)]*libmalloc_breaker/ {
+            if (/ at 0x/) promote[pid()] = 1
+            next
+        }
+        / by 0x[0-9A-Fa-f]+: / && promote[pid()] {
+            sub(/ by 0x/, " at 0x")
+            promote[pid()] = 0
+        }
+        { print; fflush() }'
+}
+
 if ((!AUTO)); then
-    run_valgrind "${VG_ARGS[@]}" "${PROG[@]}"
-    exit
+    if [[ " ${VG_ARGS[*]} " =~ \ --(log-fd|log-file|log-socket|xml)= ]]; then
+        run_valgrind "${VG_ARGS[@]}" "${PROG[@]}"
+        exit
+    fi
+    # FIFO: a --log-fd would stay open in the program.
+    LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/valgrind_breaker.XXXXXX")
+    mkfifo "$LOG_DIR/log"
+    strip_shim_frames < "$LOG_DIR/log" >&2 &
+    FILTER=$!
+    run_valgrind --log-file="$LOG_DIR/log" "${VG_ARGS[@]}" "${PROG[@]}"
+    STATUS=$?
+    # Unblock the filter if the log was never opened.
+    exec 5<>"$LOG_DIR/log"
+    exec 5>&-
+    wait "$FILTER"
+    rm -rf "$LOG_DIR"
+    exit "$STATUS"
 fi
 
 ########################################
@@ -106,7 +138,7 @@ fi
 ########################################
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/valgrind_breaker.XXXXXX")
-# Background jobs ignore SIGINT: stop them and everything they started.
+# Background jobs ignore SIGINT.
 kill_tree() {
     local child
     for child in $(pgrep -P "$1"); do
@@ -132,18 +164,17 @@ if [[ ! -t 0 ]]; then
     cat > "$STDIN_FILE"
 fi
 
-# Where the failing allocation was requested: first frames outside the shim.
 failing_site() {
-    awk '
+    cat "$@" | strip_shim_frames | awk '
         /Failing malloc call/ { found = 1; next }
-        found && /(at|by) 0x/ && !/malloc_breaker|valgrind\.h/ {
+        found && /(at|by) 0x/ {
             sub(/^==[0-9]+== +(at|by) 0x[0-9A-Fa-f]+: /, "")
             site = site (n++ ? " <- " : "") $0
             if (n == 3) exit
             next
         }
         found && n && !/(at|by) 0x/ { exit }
-        END { print site }' "$@"
+        END { print site }'
 }
 
 run_one() {
@@ -183,33 +214,59 @@ run_one() {
 
     local joined
     joined=$(IFS=,; echo "${problems[*]}")
-    # One line per run: parallel runs must not interleave.
-    printf '%s#%-5s %s%s  at %s\n' "$MAGENTA" "$index" "${joined//,/, }" "$RESET" \
+    printf '%s%s#%-5s %s%s  at %s\n' "$CLEAR" "$MAGENTA" "$index" "${joined//,/, }" "$RESET" \
         "$(failing_site "${logs[@]}")"
+    local log
+    for log in "${logs[@]}"; do
+        strip_shim_frames < "$log" > "$log.tmp" && mv "$log.tmp" "$log"
+    done
     : > "$WORK/problem.$index"
 }
 
+progress() {
+    [[ -n "$CLEAR" ]] || return 0
+    local total=$((MAX - START + 1))
+    local problems
+    problems=$(find "$WORK" -name 'problem.*' | wc -l)
+    printf '%s[%d/%d] %d%% | %d problem(s) | %dm%02ds' "$CLEAR" \
+        "$DONE" "$total" $((DONE * 100 / total)) "$problems" \
+        $((SECONDS / 60)) $((SECONDS % 60))
+}
+
+[[ -n "$CLEAR" ]] && printf 'Counting allocations...'
 COUNT_FILE="$WORK/count"
 MALLOC_FAIL_COUNT_FILE="$COUNT_FILE" run_valgrind -q --log-file=/dev/null \
     "${PROG[@]}" < "$STDIN_FILE" > /dev/null 2>&1
 if [[ ! -s "$COUNT_FILE" ]]; then
+    printf "%s" "$CLEAR"
     echo "valgrind_breaker: failed to count allocations" \
         "(did the program exit through exit()/return from main?)" >&2
     rm -rf "$WORK"
     exit 1
 fi
 read -r BREAKABLE SUPPRESSED < "$COUNT_FILE"
+printf '%s' "$CLEAR"
 echo "Breakable allocations: $BREAKABLE ($SUPPRESSED suppressed)"
 
 ((MAX > 0)) || MAX=$BREAKABLE
 
+DONE=0
+SECONDS=0
+progress
 for ((i = START; i <= MAX; i++)); do
     while (($(jobs -rp | wc -l) >= JOBS)); do
         wait -n
+        ((DONE++))
+        progress
     done
     run_one "$i" &
 done
-wait
+while (($(jobs -rp | wc -l) > 0)); do
+    wait -n
+    ((DONE++))
+    progress
+done
+printf '%s' "$CLEAR"
 
 PROBLEMS=$(find "$WORK" -name 'problem.*' | wc -l)
 if ((PROBLEMS)); then
