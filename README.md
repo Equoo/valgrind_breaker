@@ -18,24 +18,24 @@ failure paths.
 
 ```sh
 make
-./valgrind_breaker --malloc-fail-auto ./prog args...
-./valgrind_breaker --malloc-fail-auto ./minishell < input.txt
-./valgrind_breaker --malloc-fail-at=12 --leak-check=full ./prog
-./valgrind_breaker --malloc-fail-count=yes ./prog
+./valgrind_breaker --auto ./prog args...
+./valgrind_breaker --auto -j 4 --ignore=readline ./minishell < input.txt
+./valgrind_breaker --fail=12 --leak-check=full ./prog
+./valgrind_breaker --count ./prog
 ```
 
 Valgrind options are passed through unchanged.
 
 | Option | Meaning |
 |---|---|
-| `--malloc-fail-at=<n>` | fail the Nth allocation (1-based) |
-| `--malloc-fail-all=yes\|no` | also fail every allocation after the Nth |
-| `--malloc-fail-count=yes\|no` | print the allocation counters at exit |
-| `--malloc-fail-only-main=yes\|no` | only count allocations requested by the main executable |
-| `--malloc-fail-ignore=a,b` | don't count allocations requested by objects whose path contains `a` or `b` (e.g. `readline`) |
-| `--malloc-fail-auto` | fail each allocation in turn and report problems |
-| `--malloc-fail-start=<n>` / `--malloc-fail-max=<n>` | range for auto mode |
-| `--malloc-fail-jobs=<n>` | parallel runs in auto mode (default: `nproc`) |
+| `--fail=<n>` | fail the Nth allocation (1-based) |
+| `--fail-all` | also fail every allocation after the Nth |
+| `--count` | print the allocation counters at exit |
+| `--main-only` | only count allocations requested by the main executable |
+| `--ignore=a,b` | don't count allocations requested by objects whose path contains `a` or `b` (e.g. `readline`) |
+| `--auto` | fail each allocation in turn and report problems |
+| `--from=<n>` / `--to=<n>` | range for auto mode |
+| `-j <n>`, `--jobs=<n>` | parallel runs in auto mode (default: `nproc`) |
 
 `VALGRIND=/path/to/valgrind` selects another valgrind binary.
 

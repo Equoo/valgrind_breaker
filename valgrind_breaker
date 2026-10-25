@@ -5,17 +5,16 @@
 #   valgrind_breaker [valgrind options] [breaker options] prog [args...]
 #
 # Breaker options:
-#   --malloc-fail-at=<n>          fail the Nth allocation
-#   --malloc-fail-all=yes|no      also fail every allocation after the Nth [no]
-#   --malloc-fail-count=yes|no    print the allocation counters at exit [no]
-#   --malloc-fail-only-main=yes|no  only count allocations requested by the
-#                                 main executable [no]
-#   --malloc-fail-ignore=a,b      don't count allocations requested by objects
-#                                 whose path contains a or b (e.g. readline)
-#   --malloc-fail-auto            fail each allocation in turn, report problems
-#   --malloc-fail-start=<n>       first allocation to fail in auto mode [1]
-#   --malloc-fail-max=<n>         last allocation to fail in auto mode [count]
-#   --malloc-fail-jobs=<n>        parallel runs in auto mode [nproc]
+#   --fail=<n>      fail the Nth allocation
+#   --fail-all      also fail every allocation after the Nth
+#   --count         print the allocation counters at exit
+#   --main-only     only count allocations requested by the main executable
+#   --ignore=a,b    don't count allocations requested by objects whose path
+#                   contains a or b (e.g. readline)
+#   --auto          fail each allocation in turn, report problems
+#   --from=<n>      first allocation to fail in auto mode [1]
+#   --to=<n>        last allocation to fail in auto mode [count]
+#   -j <n>, --jobs=<n>  parallel runs in auto mode [nproc]
 #
 # Environment: VALGRIND (valgrind binary to use) [valgrind]
 
@@ -29,16 +28,8 @@ GREEN=$'\033[1;32m'
 RESET=$'\033[0m'
 
 usage() {
-    sed -n '3,20s/^# \{0,1\}//p' "$0"
+    sed -n '3,19s/^# \{0,1\}//p' "$0"
     exit "${1:-0}"
-}
-
-yes_no() {
-    case "$2" in
-        yes) echo 1 ;;
-        no) echo 0 ;;
-        *) echo "valgrind_breaker: $1 expects yes or no" >&2; exit 2 ;;
-    esac
 }
 
 number() {
@@ -63,22 +54,21 @@ unset MALLOC_FAIL_AT MALLOC_FAIL_ALL MALLOC_FAIL_COUNT MALLOC_FAIL_COUNT_FILE \
 
 while (($#)); do
     case "$1" in
-        --malloc-fail-at=*)        export MALLOC_FAIL_AT=$(number "${1%%=*}" "${1#*=}") || exit ;;
-        --malloc-fail-all)         export MALLOC_FAIL_ALL=1 ;;
-        --malloc-fail-all=*)       export MALLOC_FAIL_ALL=$(yes_no "${1%%=*}" "${1#*=}") || exit ;;
-        --malloc-fail-count)       export MALLOC_FAIL_COUNT=1 ;;
-        --malloc-fail-count=*)     export MALLOC_FAIL_COUNT=$(yes_no "${1%%=*}" "${1#*=}") || exit ;;
-        --malloc-fail-only-main)   export MALLOC_FAIL_ONLY_MAIN=1 ;;
-        --malloc-fail-only-main=*) export MALLOC_FAIL_ONLY_MAIN=$(yes_no "${1%%=*}" "${1#*=}") || exit ;;
-        --malloc-fail-ignore=*)    export MALLOC_FAIL_IGNORE=${1#*=} ;;
-        --malloc-fail-auto)        AUTO=1 ;;
-        --malloc-fail-start=*)     START=$(number "${1%%=*}" "${1#*=}") || exit ;;
-        --malloc-fail-max=*)       MAX=$(number "${1%%=*}" "${1#*=}") || exit ;;
-        --malloc-fail-jobs=*)      JOBS=$(number "${1%%=*}" "${1#*=}") || exit ;;
-        -h|--help)                 usage ;;
-        --)                        shift; break ;;
-        -*)                        VG_ARGS+=("$1") ;;
-        *)                         break ;;
+        --fail=*)       export MALLOC_FAIL_AT=$(number "${1%%=*}" "${1#*=}") || exit ;;
+        --fail-all)     export MALLOC_FAIL_ALL=1 ;;
+        --count)        export MALLOC_FAIL_COUNT=1 ;;
+        --main-only)    export MALLOC_FAIL_ONLY_MAIN=1 ;;
+        --ignore=*)     export MALLOC_FAIL_IGNORE=${1#*=} ;;
+        --auto)         AUTO=1 ;;
+        --from=*)       START=$(number "${1%%=*}" "${1#*=}") || exit ;;
+        --to=*)         MAX=$(number "${1%%=*}" "${1#*=}") || exit ;;
+        --jobs=*)       JOBS=$(number "${1%%=*}" "${1#*=}") || exit ;;
+        -j)             JOBS=$(number -j "${2-}") || exit; shift ;;
+        -j*)            JOBS=$(number -j "${1#-j}") || exit ;;
+        -h|--help)      usage ;;
+        --)             shift; break ;;
+        -*)             VG_ARGS+=("$1") ;;
+        *)              break ;;
     esac
     shift
 done
