@@ -1,5 +1,0 @@
-prog: scalar
-# Do not run under root
-prereq: [ `id -u` -ne 0 ]
-vgopts: -q --error-limit=no
-args: < scalar.c

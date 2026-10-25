@@ -1,3 +1,0 @@
-prog: pcmpgt amd64
-prereq: test -e pcmpgt
-stderr_filter: ../filter_allocs

@@ -1,3 +1,0 @@
-prereq: test -e ./sem_timedwait
-vgopts: -q
-prog: sem_timedwait

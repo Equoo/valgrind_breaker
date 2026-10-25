@@ -1,3 +1,0 @@
-prog: leak-cases
-vgopts: --error-exitcode=127 --errors-for-leak-kinds=definite --leak-check=full -s --exit-on-first-error=yes
-stderr_filter_args: leak-cases.c

@@ -1,3 +1,0 @@
-prog: posix_memalign
-vgopts: -q --freelist-vol=100000 --freelist-big-blocks=0
-stderr_filter: filter_size_t

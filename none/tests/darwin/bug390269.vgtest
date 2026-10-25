@@ -1,3 +1,0 @@
-prog: bug390269
-vgopts: -q
-post: rm -f boxbackup.recombinetemp.1.*

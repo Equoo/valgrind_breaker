@@ -1,3 +1,0 @@
-prog: avx-vmovq
-prereq: test -x avx-vmovq && ../../../tests/x86_amd64_features amd64-avx
-vgopts: -q

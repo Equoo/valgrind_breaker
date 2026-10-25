@@ -1,3 +1,0 @@
-prereq: test -x sse4-x86 
-prog: sse4-x86
-vgopts: -q

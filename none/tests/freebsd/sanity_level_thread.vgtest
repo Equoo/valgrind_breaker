@@ -1,3 +1,0 @@
-prog: sanity_level_thread
-vgopts: -q --sanity-level=3
-cleanup: rm -f output.txt

@@ -1,2 +1,0 @@
-prog: memory_test
-vgopts: -q

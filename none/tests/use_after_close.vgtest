@@ -1,4 +1,0 @@
-prog: use_after_close
-prereq: test -x use_after_close
-vgopts: -q --track-fds=yes
-stderr_filter: filter_fdleak

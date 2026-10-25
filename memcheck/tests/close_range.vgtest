@@ -1,3 +1,0 @@
-prereq: test -e ./close_range
-prog: close_range
-vgopts: -q

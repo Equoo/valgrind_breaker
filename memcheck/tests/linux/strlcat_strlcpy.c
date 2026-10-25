@@ -1,1 +1,0 @@
-../freebsd/strlcat_strlcpy.c

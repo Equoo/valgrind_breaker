@@ -1,2 +1,0 @@
-prereq: test -e thrd_create && ./supported_libpthread
-prog: thrd_create

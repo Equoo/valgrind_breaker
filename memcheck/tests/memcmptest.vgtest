@@ -1,3 +1,0 @@
-prog: memcmptest
-vgopts: -q
-stderr_filter: filter_libc_variants

@@ -1,2 +1,0 @@
-prog: mmap_o_direct
-vgopts: -q

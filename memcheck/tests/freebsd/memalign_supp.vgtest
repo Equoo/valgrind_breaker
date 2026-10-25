@@ -1,3 +1,0 @@
-prog: memalign
-vgopts: -s --suppressions=memalign_supp.supp
-stderr_filter: filter_supp

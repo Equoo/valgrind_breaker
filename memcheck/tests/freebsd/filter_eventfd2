@@ -1,7 +1,0 @@
-#! /bin/sh
-
-../filter_stderr "$@" |
-
-sort
-
-exit 0

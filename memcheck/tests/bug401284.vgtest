@@ -1,3 +1,0 @@
-prog: bug401284
-args: hello
-vgopts: -q

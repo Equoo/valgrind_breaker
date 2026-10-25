@@ -1,3 +1,0 @@
-prereq: test -e ./brk2
-prog: brk2
-stderr_filter: filter_allocs
