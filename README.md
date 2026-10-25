@@ -63,4 +63,16 @@ Valgrind options are passed through unchanged.
 - Auto mode reads stdin when it is not a terminal: redirect it
   (`< input` or `< /dev/null`).
 
-The original patched-memcheck implementation is in the git history.
+## Legacy version
+
+The first version was a fork of valgrind with a patched memcheck
+(`--malloc-fail-at`, `--malloc-fail-all`, `--malloc-fail-count`), which
+required building valgrind from source. It lives on the `legacy` branch, with
+the full valgrind history:
+
+```sh
+git fetch origin legacy
+git checkout legacy
+```
+
+It is no longer maintained.
