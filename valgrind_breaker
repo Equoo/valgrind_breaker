@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+#
+# valgrind_breaker: malloc failure injection on top of the system valgrind.
+#
+#   valgrind_breaker [valgrind options] [breaker options] prog [args...]
+#
+# Breaker options:
+#   --malloc-fail-at=<n>          fail the Nth allocation
+#   --malloc-fail-all=yes|no      also fail every allocation after the Nth [no]
+#   --malloc-fail-count=yes|no    print the allocation counters at exit [no]
+#   --malloc-fail-only-main=yes|no  only count allocations requested by the
+#                                 main executable [no]
+#   --malloc-fail-ignore=a,b      don't count allocations requested by objects
+#                                 whose path contains a or b (e.g. readline)
+#   --malloc-fail-auto            fail each allocation in turn, report problems
+#   --malloc-fail-start=<n>       first allocation to fail in auto mode [1]
+#   --malloc-fail-max=<n>         last allocation to fail in auto mode [count]
+#   --malloc-fail-jobs=<n>        parallel runs in auto mode [nproc]
+#
+# Environment: VALGRIND (valgrind binary to use) [valgrind]
+
+set -uo pipefail
+
+HERE=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+VALGRIND=${VALGRIND:-valgrind}
+
+MAGENTA=$'\033[1;35m'
+GREEN=$'\033[1;32m'
+RESET=$'\033[0m'
+
+usage() {
+    sed -n '3,20s/^# \{0,1\}//p' "$0"
+    exit "${1:-0}"
+}
+
+yes_no() {
+    case "$2" in
+        yes) echo 1 ;;
+        no) echo 0 ;;
+        *) echo "valgrind_breaker: $1 expects yes or no" >&2; exit 2 ;;
+    esac
+}
+
+number() {
+    if [[ ! "$2" =~ ^[0-9]+$ ]]; then
+        echo "valgrind_breaker: $1 expects a number" >&2
+        exit 2
+    fi
+    echo "$2"
+}
+
+########################################
+# Arguments
+########################################
+
+VG_ARGS=()
+AUTO=0
+START=1
+MAX=0
+JOBS=$(nproc)
+unset MALLOC_FAIL_AT MALLOC_FAIL_ALL MALLOC_FAIL_COUNT MALLOC_FAIL_COUNT_FILE \
+    MALLOC_FAIL_ONLY_MAIN MALLOC_FAIL_IGNORE MALLOC_FAIL_NOVG
+
+while (($#)); do
+    case "$1" in
+        --malloc-fail-at=*)        export MALLOC_FAIL_AT=$(number "${1%%=*}" "${1#*=}") || exit ;;
+        --malloc-fail-all)         export MALLOC_FAIL_ALL=1 ;;
+        --malloc-fail-all=*)       export MALLOC_FAIL_ALL=$(yes_no "${1%%=*}" "${1#*=}") || exit ;;
+        --malloc-fail-count)       export MALLOC_FAIL_COUNT=1 ;;
+        --malloc-fail-count=*)     export MALLOC_FAIL_COUNT=$(yes_no "${1%%=*}" "${1#*=}") || exit ;;
+        --malloc-fail-only-main)   export MALLOC_FAIL_ONLY_MAIN=1 ;;
+        --malloc-fail-only-main=*) export MALLOC_FAIL_ONLY_MAIN=$(yes_no "${1%%=*}" "${1#*=}") || exit ;;
+        --malloc-fail-ignore=*)    export MALLOC_FAIL_IGNORE=${1#*=} ;;
+        --malloc-fail-auto)        AUTO=1 ;;
+        --malloc-fail-start=*)     START=$(number "${1%%=*}" "${1#*=}") || exit ;;
+        --malloc-fail-max=*)       MAX=$(number "${1%%=*}" "${1#*=}") || exit ;;
+        --malloc-fail-jobs=*)      JOBS=$(number "${1%%=*}" "${1#*=}") || exit ;;
+        -h|--help)                 usage ;;
+        --)                        shift; break ;;
+        -*)                        VG_ARGS+=("$1") ;;
+        *)                         break ;;
+    esac
+    shift
+done
+
+PROG=("$@")
+((${#PROG[@]})) || usage 2
+
+########################################
+# Preload setup
+########################################
+
+if [[ ! -f "$HERE/libmalloc_breaker.so" || ! -f "$HERE/libmalloc_breaker_cxx.so" ]]; then
+    make -s -C "$HERE" >&2 || exit 1
+fi
+
+PRELOAD="$HERE/libmalloc_breaker.so"
+PROG_PATH=$(command -v "${PROG[0]}" || true)
+if [[ -n "$PROG_PATH" ]] && ldd "$PROG_PATH" 2>/dev/null | grep -q 'libstdc++'; then
+    PRELOAD="$HERE/libmalloc_breaker_cxx.so:$PRELOAD"
+fi
+
+# somalloc=nouserintercepts: keep memcheck from replacing our own malloc.
+run_valgrind() {
+    LD_PRELOAD="$PRELOAD${LD_PRELOAD:+:$LD_PRELOAD}" "$VALGRIND" \
+        --soname-synonyms=somalloc=nouserintercepts "$@"
+}
+
+if ((!AUTO)); then
+    run_valgrind "${VG_ARGS[@]}" "${PROG[@]}"
+    exit
+fi
+
+########################################
+# Auto mode
+########################################
+
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/valgrind_breaker.XXXXXX")
+trap 'rm -rf "$WORK"' INT TERM
+
+STDIN_FILE=/dev/null
+if [[ ! -t 0 ]]; then
+    STDIN_FILE="$WORK/stdin"
+    cat > "$STDIN_FILE"
+fi
+
+# Where the failing allocation was requested: first frame outside the shim.
+failing_site() {
+    awk '
+        /Failing malloc call/ { found = 1; next }
+        found && /(at|by) 0x/ && !/malloc_breaker/ {
+            sub(/^==[0-9]+== +(at|by) 0x[0-9A-Fa-f]+: /, "")
+            print
+            exit
+        }' "$@"
+}
+
+run_one() {
+    local index="$1"
+    local logs
+    local problems=()
+
+    MALLOC_FAIL_AT="$index" run_valgrind \
+        --leak-check=full \
+        --show-leak-kinds=all \
+        --errors-for-leak-kinds=none \
+        --track-origins=yes \
+        "${VG_ARGS[@]}" \
+        --log-file="$WORK/$index.%p.log" \
+        "${PROG[@]}" < "$STDIN_FILE" > /dev/null 2>&1
+    local status=$?
+
+    logs=("$WORK/$index".*.log)
+    if ! grep -q 'Failing malloc call' "${logs[@]}" 2>/dev/null; then
+        rm -f "${logs[@]}"
+        return
+    fi
+
+    if ((status > 128)); then
+        problems+=("SIG$(kill -l $((status - 128)) 2>/dev/null || echo $((status - 128)))")
+    fi
+
+    local leaks errors
+    leaks=$(cat "${logs[@]}" | grep -c 'in loss record')
+    errors=$(sed -n 's/.*ERROR SUMMARY: \([0-9,]*\) errors.*/\1/p' "${logs[@]}" \
+        | tr -d , | awk '{ s += $1 } END { print s + 0 }')
+    ((leaks)) && problems+=("$leaks leak(s)")
+    ((errors)) && problems+=("$errors error(s)")
+
+    if ((${#problems[@]} == 0)); then
+        rm -f "${logs[@]}"
+        return
+    fi
+
+    local joined
+    joined=$(IFS=,; echo "${problems[*]}")
+    printf '%s#%-5s %s%s\n    failed at: %s\n    logs: %s\n' \
+        "$MAGENTA" "$index" "${joined//,/, }" "$RESET" \
+        "$(failing_site "${logs[@]}")" "${logs[*]}"
+    : > "$WORK/problem.$index"
+}
+
+COUNT_FILE="$WORK/count"
+MALLOC_FAIL_COUNT_FILE="$COUNT_FILE" run_valgrind -q --log-file=/dev/null \
+    "${PROG[@]}" < "$STDIN_FILE" > /dev/null 2>&1
+if [[ ! -s "$COUNT_FILE" ]]; then
+    echo "valgrind_breaker: failed to count allocations" \
+        "(did the program exit through exit()/return from main?)" >&2
+    rm -rf "$WORK"
+    exit 1
+fi
+read -r BREAKABLE SUPPRESSED < "$COUNT_FILE"
+echo "Breakable allocations: $BREAKABLE ($SUPPRESSED suppressed)"
+
+((MAX > 0)) || MAX=$BREAKABLE
+
+for ((i = START; i <= MAX; i++)); do
+    while (($(jobs -rp | wc -l) >= JOBS)); do
+        wait -n
+    done
+    run_one "$i" &
+done
+wait
+
+PROBLEMS=$(find "$WORK" -name 'problem.*' | wc -l)
+if ((PROBLEMS)); then
+    echo "${MAGENTA}$PROBLEMS failing allocation(s) out of $((MAX - START + 1)) caused problems${RESET}"
+    echo "Logs kept in $WORK"
+    rm -f "$WORK"/problem.* "$WORK/stdin" "$COUNT_FILE"
+    exit 1
+fi
+echo "${GREEN}No problems in $((MAX - START + 1)) failing allocation(s)${RESET}"
+rm -rf "$WORK"
