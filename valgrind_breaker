@@ -106,7 +106,25 @@ fi
 ########################################
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/valgrind_breaker.XXXXXX")
-trap 'rm -rf "$WORK"' INT TERM
+# Background jobs ignore SIGINT: stop them and everything they started.
+kill_tree() {
+    local child
+    for child in $(pgrep -P "$1"); do
+        kill_tree "$child"
+    done
+    kill -TERM "$1" 2>/dev/null
+}
+
+stop() {
+    local pid
+    for pid in $(jobs -p); do
+        kill_tree "$pid"
+    done
+    wait 2>/dev/null
+    rm -rf "$WORK"
+    exit 130
+}
+trap stop INT TERM
 
 STDIN_FILE=/dev/null
 if [[ ! -t 0 ]]; then
@@ -114,15 +132,18 @@ if [[ ! -t 0 ]]; then
     cat > "$STDIN_FILE"
 fi
 
-# Where the failing allocation was requested: first frame outside the shim.
+# Where the failing allocation was requested: first frames outside the shim.
 failing_site() {
     awk '
         /Failing malloc call/ { found = 1; next }
-        found && /(at|by) 0x/ && !/malloc_breaker/ {
+        found && /(at|by) 0x/ && !/malloc_breaker|valgrind\.h/ {
             sub(/^==[0-9]+== +(at|by) 0x[0-9A-Fa-f]+: /, "")
-            print
-            exit
-        }' "$@"
+            site = site (n++ ? " <- " : "") $0
+            if (n == 3) exit
+            next
+        }
+        found && n && !/(at|by) 0x/ { exit }
+        END { print site }' "$@"
 }
 
 run_one() {
@@ -138,7 +159,6 @@ run_one() {
         "${VG_ARGS[@]}" \
         --log-file="$WORK/$index.%p.log" \
         "${PROG[@]}" < "$STDIN_FILE" > /dev/null 2>&1
-    local status=$?
 
     logs=("$WORK/$index".*.log)
     if ! grep -q 'Failing malloc call' "${logs[@]}" 2>/dev/null; then
@@ -146,14 +166,13 @@ run_one() {
         return
     fi
 
-    if ((status > 128)); then
-        problems+=("SIG$(kill -l $((status - 128)) 2>/dev/null || echo $((status - 128)))")
-    fi
-
-    local leaks errors
+    local signals leaks errors
+    signals=$(sed -n 's/.*Process terminating with default action of signal [0-9]* (\(SIG[A-Z0-9]*\)).*/\1/p' \
+        "${logs[@]}" | sort -u | paste -sd, -)
     leaks=$(cat "${logs[@]}" | grep -c 'in loss record')
     errors=$(sed -n 's/.*ERROR SUMMARY: \([0-9,]*\) errors.*/\1/p' "${logs[@]}" \
         | tr -d , | awk '{ s += $1 } END { print s + 0 }')
+    [[ -n "$signals" ]] && problems+=("$signals")
     ((leaks)) && problems+=("$leaks leak(s)")
     ((errors)) && problems+=("$errors error(s)")
 
@@ -164,9 +183,9 @@ run_one() {
 
     local joined
     joined=$(IFS=,; echo "${problems[*]}")
-    printf '%s#%-5s %s%s\n    failed at: %s\n    logs: %s\n' \
-        "$MAGENTA" "$index" "${joined//,/, }" "$RESET" \
-        "$(failing_site "${logs[@]}")" "${logs[*]}"
+    # One line per run: parallel runs must not interleave.
+    printf '%s#%-5s %s%s  at %s\n' "$MAGENTA" "$index" "${joined//,/, }" "$RESET" \
+        "$(failing_site "${logs[@]}")"
     : > "$WORK/problem.$index"
 }
 
@@ -195,7 +214,7 @@ wait
 PROBLEMS=$(find "$WORK" -name 'problem.*' | wc -l)
 if ((PROBLEMS)); then
     echo "${MAGENTA}$PROBLEMS failing allocation(s) out of $((MAX - START + 1)) caused problems${RESET}"
-    echo "Logs kept in $WORK"
+    echo "Logs kept in $WORK (<n>.<pid>.log)"
     rm -f "$WORK"/problem.* "$WORK/stdin" "$COUNT_FILE"
     exit 1
 fi
