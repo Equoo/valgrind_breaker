@@ -1,6 +1,6 @@
 # valgrind_breaker
 
-Malloc failure injection on top of the system valgrind: no valgrind rebuild.
+Malloc failure injection on top of Valgrind.
 
 A small `LD_PRELOAD` library counts allocations and makes the Nth one fail
 (`NULL` + `errno = ENOMEM`, or `std::bad_alloc` for `operator new`), while
@@ -38,22 +38,6 @@ Valgrind options are passed through unchanged.
 | `-j <n>`, `--jobs=<n>` | parallel runs in auto mode (default: `nproc`) |
 
 `VALGRIND=/path/to/valgrind` selects another valgrind binary.
-
-## How it works
-
-- `libmalloc_breaker.so` wraps `malloc`, `calloc`, `realloc(NULL, n)`,
-  `reallocarray`, `memalign`, `aligned_alloc`, `posix_memalign` and `valloc`,
-  and forwards to libc's versions, which memcheck replaces as usual.
-- `libmalloc_breaker_cxx.so` wraps `operator new`/`new[]` (preloaded only for
-  programs linked against libstdc++).
-- valgrind keeps the user's `LD_PRELOAD` and puts its own preloads in front.
-  The script passes `--soname-synonyms=somalloc=nouserintercepts`, otherwise
-  memcheck would replace the shim's own `malloc` and it would do nothing.
-- The shim is only armed under valgrind (`RUNNING_ON_VALGRIND`), so the
-  valgrind launcher is unaffected. `MALLOC_FAIL_NOVG=1` arms it natively.
-- The requester of an allocation is the first stack frame outside libc,
-  libstdc++, libgcc_s, libm and ld.so: `strdup()` called from `main` counts
-  as `main`'s.
 
 ## Limitations
 
